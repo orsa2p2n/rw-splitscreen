@@ -19,7 +19,7 @@ using System.Runtime.CompilerServices;
 
 namespace SplitScreenCoop
 {
-    [BepInPlugin("com.henpemaz.splitscreencoop", "SplitScreen Co-op", "0.1.21")]
+    [BepInPlugin("com.orsa.splitscreencoop", "SplitScreen Co-op", "0.1.0")]
     public partial class SplitScreenCoop : BaseUnityPlugin
     {
         public static SplitScreenCoopOptions Options;
@@ -66,6 +66,8 @@ namespace SplitScreenCoop
         public static bool alwaysSplit;
         public static bool allowCameraSwapping;
         public static bool dualDisplays;
+        public static bool dualDisplaysPending;
+        public static int dualDisplayActivationDelay;
         public static bool stickTogetherEnabled;
 
         public static Camera[] fcameras = new Camera[4];
@@ -100,8 +102,36 @@ namespace SplitScreenCoop
 
         public static RainWorld rainworldGameObject = null;
 
+        private void UpdatePendingDualDisplay()
+        {
+            if (!dualDisplaysPending)
+            {
+                return;
+            }
+
+            var processManager = rainworldGameObject?.processManager;
+            if (processManager == null || processManager.currentMainLoop is Menu.InitializationScreen)
+            {
+                return;
+            }
+
+            if (dualDisplayActivationDelay > 0)
+            {
+                dualDisplayActivationDelay--;
+                return;
+            }
+
+            dualDisplaysPending = false;
+            dualDisplays = true;
+            preferedSplitMode = SplitMode.NoSplit;
+            alwaysSplit = false;
+            InitSecondDisplay();
+        }
+
         public void Update()
         {
+            UpdatePendingDualDisplay();
+
             if (Input.GetKeyDown("f8"))
             {
                 if (preferedSplitMode == SplitMode.SplitHorizontal) preferedSplitMode = SplitMode.SplitVertical;
@@ -120,7 +150,7 @@ namespace SplitScreenCoop
 
                 // Register OptionsInterface
                 Options ??= new SplitScreenCoopOptions();
-                MachineConnector.SetRegisteredOI("henpemaz_splitscreencoop", Options);
+                MachineConnector.SetRegisteredOI("orsa_splitscreencoop", Options);
 
                 //CHECK IF SPECIFIC MODS ARE ENABLED
                 for (int i = 0; i < ModManager.ActiveMods.Count; i++)
@@ -296,7 +326,9 @@ namespace SplitScreenCoop
             alwaysSplit = Options.AlwaysSplit.Value;
             allowCameraSwapping = Options.AllowCameraSwapping.Value;
 
-            if (dualDisplays && DualDisplaySupported())
+            bool dualDisplayEnabled = dualDisplays && DualDisplaySupported();
+
+            if (dualDisplayEnabled && Display.displays[1].active)
             {
                 InitSecondDisplay();
                 preferedSplitMode = SplitMode.NoSplit;
@@ -304,6 +336,8 @@ namespace SplitScreenCoop
             }
             else
             {
+                dualDisplaysPending = dualDisplayEnabled;
+                dualDisplayActivationDelay = 30;
                 cameraListeners[1]?.BindToDisplay(Display.main);
                 dualDisplays = false;
             }
@@ -316,9 +350,13 @@ namespace SplitScreenCoop
 
         public static void InitSecondDisplay()
         {
-            if (!Display.displays[1].active)
-                Display.displays[1].Activate();
-            cameraListeners[1].BindToDisplay(Display.displays[1]);
+            var secondDisplay = Display.displays[1];
+            if (!secondDisplay.active)
+            {
+                secondDisplay.Activate();
+            }
+
+            cameraListeners[1].BindToDisplay(secondDisplay);
             cameraListeners[1].mirrorMain = true;
         }
         
